@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fuegos artificiales — Para Gio</title>
+<style>
+body,html{
+  margin:0;
+  height:100%;
+  background:#050006;
+  overflow:hidden;
+  font-family:sans-serif;
+  cursor: url('https://i.ibb.co/JBmfTZw/girasol32.png') 16 16, auto;
+}
+#stage{position:fixed;inset:0;z-index:0;}
+canvas{position:absolute;inset:0;z-index:1;}
+
+.front{
+  position:relative;
+  z-index:3;
+  width:100%;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding-top:3.5rem;
+  pointer-events: none; 
+}
+
+.balloon, .message, .breath-image {
+  pointer-events: none;
+}
+
+.balloon-row{
+  display:flex;
+  gap:1rem;
+  justify-content:center;
+  margin-bottom:1rem;
+}
+.balloon{
+  width:90px;
+  height:120px;
+  border-radius:50% 50% 50% 50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.6rem;
+  font-weight:bold;
+  color:#222;
+  box-shadow:0 8px 20px rgba(0,0,0,0.4), inset 0 -6px 12px rgba(255,255,255,0.06);
+  position:relative;
+  animation: floatY linear infinite;
+}
+.balloon::after{
+  content:"";
+  position:absolute;
+  bottom:-18px;
+  left:50%;
+  transform:translateX(-50%);
+  width:4px;height:28px;
+  background:linear-gradient(#444,#222);
+  border-radius:2px;
+}
+.balloon.yellow{ background:linear-gradient(#fff3a8,#ffea4a); }
+.balloon.white{ background:linear-gradient(#ffffff,#f2f2f2); }
+
+@keyframes floatY{
+  0%{ transform:translateY(0) rotate(-3deg)}
+  50%{ transform:translateY(-15px) rotate(3deg)}
+  100%{ transform:translateY(0) rotate(-3deg)}
+}
+
+.message{
+  color:#fff;
+  text-align:center;
+  text-shadow:0 6px 18px rgba(0,0,0,0.6);
+  margin-top:1rem;
+}
+.message .line1{ font-size:2rem; font-weight:700; }
+.message .line2{ font-size:3rem; font-weight:900; color:#ff6b8a; }
+
+.breath-image{
+  width:300px;
+  height:300px;
+  margin-top:1.5rem;
+  background:url('https://i.postimg.cc/g077bzLH/flores.png') center center / contain no-repeat;
+  border-radius:12px;
+  box-shadow:0 12px 36px rgba(0,0,0,0.6);
+  animation:breathe 2.6s ease-in-out infinite;
+}
+@keyframes breathe{
+  0%{transform:scale(1)}
+  25%{transform:scale(1.07)}
+  50%{transform:scale(1)}
+  75%{transform:scale(1.03)}
+  100%{transform:scale(1)}
+}
+
+#celebrateBtn {
+  pointer-events: auto;
+  padding:10px 20px;
+  font-size:18px;
+  margin-top:20px;
+  cursor:pointer;
+  z-index:5;
+  position:relative;
+}
+
+#finalImage {
+  display:none;
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:100%;
+  object-fit:cover;
+  z-index:999;
+}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="fxCanvas"></canvas></div>
+
+<div class="front">
+  <div class="balloon-row" id="balloonRow"></div>
+  <div class="message">
+    <div class="line1">Para ti Gio</div>
+    <div class="line2">Te AMO</div>
+  </div>
+  <div class="breath-image"></div>
+  <button id="celebrateBtn">Abreme :3</button>
+</div>
+
+<img id="finalImage" src="https://i.postimg.cc/R0GPQcBF/1dfe49d5-b5dc-4dfc-a19e-fa898b6a450e.jpg" />
+
+<script>
+const canvas = document.getElementById('fxCanvas');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = innerWidth;
+let H = canvas.height = innerHeight;
+window.addEventListener('resize',()=>{W=canvas.width=innerWidth; H=canvas.height=innerHeight;});
+
+const stars = Array.from({length:60},()=>({
+  x:Math.random()*W, y:Math.random()*H, r:Math.random()*1.5+0.4, a:Math.random()
+}));
+
+const colors = ["#ffea4a","#ff0000","#33cc33","#ffffff"];
+const particles = [];
+const rockets = [];
+
+class Particle {
+  constructor(x, y, angle, speed, color, size){
+    this.x = x;
+    this.y = y;
+    this.vx = Math.cos(angle)*speed;
+    this.vy = Math.sin(angle)*speed;
+    this.color = color;
+    this.alpha = 1;
+    this.size = size || Math.random()*4+1;
+    this.gravityDelay = 60;
+  }
+  update(){
+    if(this.gravityDelay>0){
+      this.x+=this.vx;
+      this.y+=this.vy;
+      this.gravityDelay--;
+    } else {
+      this.vy+=0.02;
+      this.x+=this.vx*0.98;
+      this.y+=this.vy*0.98;
+    }
+    this.alpha-=0.004;
+    this.size*=0.98;
+  }
+  draw(){
+    ctx.save();
+    ctx.globalAlpha=this.alpha;
+    ctx.fillStyle=this.color;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Rocket {
+  constructor(targetX,targetY,color=null){
+    this.x = Math.random()*W;
+    this.y = H;
+    this.targetX = targetX;
+    this.targetY = targetY;
+    this.exploded = false;
+    this.color = color || colors[Math.floor(Math.random()*colors.length)];
+  }
+  update(){
+    const dx = this.targetX - this.x;
+    const dy = this.targetY - this.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist<6){
+      this.explode();
+      this.exploded=true;
+    } else {
+      this.x += dx*0.05;
+      this.y += dy*0.05;
+    }
+  }
+  draw(){
+    ctx.fillStyle=this.color;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,3,0,Math.PI*2);
+    ctx.fill();
+  }
+  explode(){
+    const n=300;
+    for(let i=0;i<n;i++){
+      const angle = Math.random()*Math.PI*2;
+      const radius = Math.random()*50;
+      const px = this.x + Math.cos(angle)*radius;
+      const py = this.y + Math.sin(angle)*radius;
+      const speed = Math.random()*1.2+0.3;
+      const size = Math.random()*4+1;
+      particles.push(new Particle(px,py,angle,speed,this.color,size));
+    }
+  }
+}
+
+class GiantRocket {
+  constructor(){
+    this.x = W/2;
+    this.y = H;
+    this.targetX = W/2;
+    this.targetY = H/3;
+    this.exploded = false;
+  }
+  update(){
+    const dx = this.targetX - this.x;
+    const dy = this.targetY - this.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist<6){
+      this.explode();
+      this.exploded=true;
+    } else {
+      this.x += dx*0.02;
+      this.y += dy*0.02;
+    }
+  }
+  draw(){
+    ctx.fillStyle="#fff";
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,5,0,Math.PI*2);
+    ctx.fill();
+  }
+  explode(){
+    const n = 5000;
+    colors.forEach(color=>{
+      for(let i=0;i<n/4;i++){
+        const angle = Math.random()*Math.PI*2;
+        const radius = Math.random()*W/2;
+        const px = this.x + Math.cos(angle)*radius;
+        const py = this.y + Math.sin(angle)*radius;
+        const speed = Math.random()*2+0.3;
+        const size = Math.random()*6+2;
+        particles.push(new Particle(px,py,angle,speed,color,size));
+      }
+    });
+    setTimeout(()=>{
+      document.getElementById('finalImage').style.display='block';
+    },2500);
+  }
+}
+
+/* Mouse click y hold */
+let firing=false, fireInterval;
+canvas.addEventListener('mousedown', e=>{
+  firing=true;
+  rockets.push(new Rocket(e.clientX,e.clientY));
+  fireInterval = setInterval(()=>{
+    if(firing) rockets.push(new Rocket(e.clientX,e.clientY));
+  }, Math.random()*600+400);
+});
+canvas.addEventListener('mouseup', ()=>{
+  firing=false;
+  clearInterval(fireInterval);
+});
+
+/* Botón festejar */
+const celebrateBtn = document.getElementById('celebrateBtn');
+celebrateBtn.addEventListener('click', ()=>{
+  let start = Date.now();
+  let interval = setInterval(()=>{
+    const now = Date.now();
+    if(now - start > 4000){
+      clearInterval(interval);
+      setTimeout(()=>{ rockets.push(new GiantRocket()); }, 1000);
+    } else {
+      rockets.push(new Rocket(Math.random()*W, Math.random()*(H/2)));
+    }
+  },200);
+});
+
+function loop(){
+  ctx.fillStyle="#050006";
+  ctx.fillRect(0,0,W,H);
+
+  stars.forEach(s=>{
+    ctx.globalAlpha=0.5+Math.sin(Date.now()/500+s.a)*0.5;
+    ctx.fillStyle="#fff";
+    ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  rockets.forEach((r,i)=>{
+    r.update();
+    r.draw();
+    if(r.exploded) rockets.splice(i,1);
+  });
+
+  particles.forEach((p,i)=>{
+    p.update();
+    p.draw();
+    if(p.alpha<=0) particles.splice(i,1);
+  });
+
+  requestAnimationFrame(loop);
+}
+loop();
+
+/* Globos ❤️ L O V E ❤️ */
+const letters=["❤️","L","O","V","E","❤️"];
+const balloonRow=document.getElementById('balloonRow');
+letters.forEach((ch,i)=>{
+  const b=document.createElement('div');
+  b.className="balloon "+(i%2===0?"yellow":"white");
+  b.textContent=ch;
+  b.style.animationDuration=Math.random()*2.5+3.5+"s";
+  b.style.animationDelay=Math.random()*4-2+"s";
+  balloonRow.appendChild(b);
+});
+</script>
+</body>
+</html>
